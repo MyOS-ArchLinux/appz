@@ -1,0 +1,200 @@
+#!/usr/bin/env bash
+APPZ_VERSION="0.1"
+APPZ_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/appz"  # where all configs belongs
+APPZ_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/appz"	  # where all caches belongs
+APPZ_DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/appz" # where all addons belongs
+APPZ_TMP_DIR="/tmp/appz/$$"						 		  # where all tmps belongs
+
+APPZ_SCRIPT_NAME="$(basename "$0")"
+APPZ_isINSTALLED=false
+APPZ_FORCE_ACT=false
+APPZ_LOG=false
+
+APPZ_MNGR=pacman
+APPZ_ACTN=help
+
+# functions
+## tools
+### check for deps and functions
+has(){
+	case "$(command -v "$1" 2>/dev/null)" in
+		alias*|"") return 1
+	esac
+}
+### 
+tot(){
+	i=0
+	while read -r ; do
+		i=$((i + 1))
+	done
+	echo "${APPZ_MNGR:?} : $i packages"
+}
+
+### check for multiple deps
+need(){
+	local prog;
+	local dependencies_not_installed;
+	for prog in $@; do
+		! has "$prog" && dependencies_not_installed="${dependencies_not_installed}${prog}, "
+	done
+	[ -n "${dependencies_not_installed}" ] && \
+		{
+			echo "err : missing dependencies, please install: ${dependencies_not_installed%??}."
+			return 1 ;
+		}
+}
+### prnt options
+prnt_opt() {
+	>&2 printf "\033[33;1m-> \033[35;1m%s | %s\033[m %s\n" "$1" "$2" "$3"
+}
+
+prnt_log() {
+	[[ "${APPZ_LOG:-false}" == false ]] && return
+	echo "$@"
+}
+
+### _prompt
+_prompt() {
+	printf "\033[34;1mprompt:\033[m %s [y/N]:   " "$1"
+	read -r confirm
+	[ "$confirm" = "y" ]
+}
+### 
+is_file_uptodate(){
+	[ -s "$*" ] || return 1
+	[ "$(stat -c %y "$*" 2>/dev/null | cut -d' ' -f1)" = "$(date '+%Y-%m-%d')" ]
+}
+
+## internal
+appz_help(){
+	>&2 echo "${APPZ_SCRIPT_NAME} [mngr] [i|r|l|C|u|U|s|S|I|c|h] [pkg]..."
+	echo "mngr : \`${APPZ_MNGR_NAME:-$APPZ_MNGR}\` v${APPZ_MNGR_VERSION}"
+	if has appz_usage ;then
+		appz_usage
+	else
+		appz_fallback_usage
+	fi
+}
+
+appz_fallback_usage(){
+	prnt_opt i "install" "install one or more packages"
+	prnt_opt r "remove " "remove one or more packages"
+	prnt_opt l "list   " "list installed packages"
+	prnt_opt C "count  " "count installed packages"
+	prnt_opt u "update " "update package lists"
+	prnt_opt U "upgrade" "upgrade all packages"
+	prnt_opt s "search " "search for a package"
+	prnt_opt S "show   " "show information about a package"
+	prnt_opt I "info   " "same as show"
+	prnt_opt c "clean  " "clean up leftover files/caches/orphans"
+	prnt_opt h "help   " "show this message"
+}
+
+# ------------
+# check if script is installed
+if ! has "${APPZ_SCRIPT_NAME:-appz}" ;then
+	# if no ; then notify and change dirs
+	APPZ_isINSTALLED=false
+	prnt_log "wrn : ${APPZ_SCRIPT_NAME:-appz} in not intalled in your path file"
+	APPZ_CONFIG_DIR="$PWD/config" # where all configs belongs
+	APPZ_CACHE_DIR="$PWD/cache"   # where all caches belongs
+	APPZ_DATA_DIR="$PWD/data"	 # where all addons belongs
+	APPZ_TMP_DIR="$PWD/tmp/$$"	# where all tmps belongs
+else
+	# if yes ; then check for updates
+	APPZ_isINSTALLED=true
+	# todo: add check for updates version
+	mkdir -p "$APPZ_CONFIG_DIR";
+	mkdir -p "$APPZ_CACHE_DIR";
+	mkdir -p "$APPZ_DATA_DIR";
+	mkdir -p "$APPZ_TMP_DIR";
+fi
+
+# load config file
+if [ -f "${APPZ_CONFIG_DIR}/config" ] ; then
+	prnt_log "log : loading config file from \`${APPZ_CONFIG_DIR}/config\`"
+	. "${APPZ_CONFIG_DIR}/config"
+else
+	prnt_log "wrn : you don't have a config file; using the default settings"
+fi
+
+
+if [ -f "${APPZ_DATA_DIR}/addons/${1:-$APPZ_MNGR}" ] ; then
+	APPZ_MNGR=${1:-$APPZ_MNGR}
+	shift
+fi
+
+# load menu
+if [ -f "${APPZ_DATA_DIR}/addons/${APPZ_MNGR}" ] ; then
+	prnt_log "log : loading mngr from \`${APPZ_DATA_DIR}/addons/${APPZ_MNGR}\`"
+	. "${APPZ_DATA_DIR}/addons/${APPZ_MNGR}"
+	has appz_usage || prnt_log "log : appz_usage() is not implemented in \`${APPZ_MNGR}\` menu, fallback to to local"
+else
+	echo "err : mngr \`${APPZ_MNGR}\` not found"
+	exit 1
+fi
+
+case "$1" in
+	-f|--force) 
+		APPZ_FORCE_ACT=true
+		shift
+		;;
+	-v|--version)
+		echo "${APPZ_SCRIPT_NAME} ${APPZ_VERSION} Copyright © 2022-2023 MyOS Project "
+		exit
+		;;
+esac
+
+case "$1" in
+	i|install)
+		APPZ_ACTN='install'
+		;;
+	r|remove)
+		APPZ_ACTN='remove'
+		;;
+	l|list)
+		APPZ_ACTN='list'
+		;;
+	u|update)
+		APPZ_ACTN='update'
+		;;
+	U|upgrade)
+		APPZ_ACTN='upgrade'
+		;;
+	s|search)
+		APPZ_ACTN='search'
+		;;
+	S|show|I|info)
+		APPZ_ACTN='show'
+		;;
+	c|clean)
+		APPZ_ACTN='clean'
+		;;
+	h|help|"")
+		APPZ_ACTN='help'
+		;;
+	has)
+		APPZ_ACTN='has'
+		;;
+	C|count)
+		APPZ_ACTN='count'
+		;;
+esac
+shift
+
+# check if action is aviable
+case "${APPZ_ACTN:?}" in
+	"clean"|"has"|"help"|"install"|"list"|"remove"|"search"|"show"|"update"|"upgrade"|"count")
+		has "appz_${APPZ_ACTN}" || echo "err : appz_${APPZ_ACTN}() is not implemented in \`${APPZ_MNGR}\` mngr."
+		appz_run() {
+			has "appz_${APPZ_ACTN}" || return 1
+			appz_${APPZ_ACTN} "$@"
+		}
+		;;
+	*)
+		echo "err : action \`${APPZ_ACTN}\` is not supported!!"
+		;;
+esac
+
+# run action : 
+appz_run "$@"
