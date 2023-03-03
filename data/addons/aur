@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+if has "yay" ;then
+	APPZ_MNGR="yay"
+elif has "paru" ;then
+	APPZ_MNGR="paru"
+fi
+
+. "${APPZ_DATA_DIR}/addons/${APPZ_MNGR}"
