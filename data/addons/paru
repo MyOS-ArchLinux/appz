@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+APPZ_MNGR_VERSION="0.0.1"
+APPZ_MNGR_NAME="paru"
+
+paru_packagelist="${APPZ_CACHE_DIR:?}/paru_packagelist"
+
+appz_list(){
+	local selected_app=$(paru -Qmq | fzf -i -e -m --preview 'pacman -Qil {}' --layout=reverse -q "${*:-}" )
+	[ -z "$selected_app" ] && return 0
+	pacman -Qi "$selected_app"
+	_prompt "do you wanna uninstall $selected_app ?" && paru -Rs "$selected_app"
+}
+
+appz_search_get_paru_packagelist(){
+	if ! is_file_uptodate "${paru_packagelist:?}"; then
+		{ ping -q -c 1 example.org >/dev/null 2>&1 && paru -Salq > "${paru_packagelist:?}" ;}
+	fi
+	cat "${paru_packagelist:?}"
+}
+
+appz_search(){
+	local selected_app=$(appz_search_get_paru_packagelist | fzf -i -e -m --preview 'paru -Si {}' --layout=reverse -q "${*:-}" )
+	[ -z "$selected_app" ] && return 0
+	paru -Si "$selected_app"
+	_prompt "do you wanna install $selected_app ?" && paru -S "$selected_app"
+}
+
+appz_install() {
+	if [ ! -n "$2" ]; then
+		local selected_app=$(paru -Ssq | fzf -i -e --preview 'paru -Si {}' --layout=reverse -q "${*:-}" --select-1)
+		[ -z "$selected_app" ] && return 0
+		echo "installing $selected_app : "
+		paru -Sa "$selected_app"
+	else
+		paru -Sa "$@"
+	fi
+}
+appz_update(){
+	paru -Qua
+}
+
+appz_upgrade(){
+	paru -Sua
+}
+
+appz_show(){
+	paru -Sai "$@"
+}
+
+appz_remove(){
+	if [ ! -n "$2" ]; then
+		local selected_app=$(paru -Qmq | fzf -i -e --preview 'pacman -Qil {}' --layout=reverse -q "${*:-}" --select-1)
+		[ -z "$selected_app" ] && return 0
+		echo "uninstalling $selected_app : "
+		paru -Rs "$selected_app"
+	else
+		paru -Rs "$@"
+	fi
+}
+
+appz_has(){
+	while [ "$1" ]; do
+		if $(paru -Qmq $1 >/dev/null 2>&1); then
+			printf ' %s \033[32;1m\t%s \033[0m\n' "- $1" "installed"
+		elif $(paru -Ssq "^$1" >/dev/null 2>&1); then
+			printf ' %s \033[31;1m\t%s \033[0m\n' "- $1" "not installed"
+		else
+			printf ' %s \033[31;1m\t%s \033[0m\n' "- $1" "not available in pacman"
+		fi
+		shift
+	done
+}
+
+appz_clean(){
+	paru -c
+	paru -Sc --aur
+}
+
+appz_count(){
+	paru -Qm | tot
+}
