@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+APPZ_MNGR_VERSION="0.0.1"
+APPZ_MNGR_NAME="pipx"
+
+appz_clean(){
+	echo "not supported"
+}
+
+appz_has(){
+	while [ "$1" ]; do
+		if pipx list | awk '/package/{ print $2 }' | grep "^${1}$" -q ; then
+			printf ' %s \033[32;1m\t%s \033[0m\n' "- $1" "installed"
+		else
+			printf ' %s \033[31;1m\t%s \033[0m\n' "- $1" "not installed"
+		fi
+		shift
+	done
+}
+
+appz_install() {
+	pipx install "$@" --verbose
+}
+
+appz_list(){
+	selected_app=$(pipx list | awk '/package/{ print $2 }' | fzf -i -e --preview 'pipx runpip {} show {}' --layout=reverse -q "${*:-}" )
+	[ -z "$selected_app" ] && exit 0
+	pipx runpip "$selected_app" show "$selected_app"
+	_prompt "do you wanna uninstall $selected_app ?" && pipx uninstall "$selected_app"
+}
+
+appz_remove(){
+	pipx uninstall "$@" --verbose
+}
+
+appz_search(){
+	echo "not supported"
+}
+
+appz_show(){
+	pipx runpip "$@" show "$@"
+}
+
+appz_update(){
+	echo "not supported"
+}
+
+appz_upgrade(){
+	pipx upgrade-all --include-injected  --verbose
+}
+
+appz_count(){
+	pipx list | awk '/package/{ print $2 }' | tot
+}
