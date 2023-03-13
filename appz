@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-APPZ_VERSION="0.1"
+APPZ_VERSION="0.1 (WIP)"
 APPZ_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/appz"  # where all configs belongs
 APPZ_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/appz"	  # where all caches belongs
 APPZ_DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/appz" # where all addons belongs
@@ -9,7 +9,6 @@ APPZ_SCRIPT_NAME="$(basename "$0")"
 APPZ_isINSTALLED=false
 APPZ_FORCE_ACT=false
 APPZ_LOG=false
-
 APPZ_MNGR=pacman
 APPZ_ACTN=help
 
@@ -118,6 +117,12 @@ else
 	prnt_log "wrn : you don't have a config file; using the default settings"
 fi
 
+case "$1" in
+	--version)
+		echo "${APPZ_SCRIPT_NAME} ${APPZ_VERSION} Copyright © 2023-2024 MyOS Project "
+		exit
+		;;
+esac
 
 if [ -f "${APPZ_DATA_DIR}/addons/${1:-$APPZ_MNGR}" ] ; then
 	APPZ_MNGR=${1:-$APPZ_MNGR}
@@ -134,58 +139,75 @@ else
 	exit 1
 fi
 
-case "$1" in
-	-f|--force) 
-		APPZ_FORCE_ACT=true
-		shift
-		;;
-	-v|--version)
-		echo "${APPZ_SCRIPT_NAME} ${APPZ_VERSION} Copyright © 2022-2023 MyOS Project "
-		exit
-		;;
-esac
-
-case "$1" in
-	i|install)
-		APPZ_ACTN='install'
-		;;
-	r|remove)
-		APPZ_ACTN='remove'
-		;;
-	l|list)
-		APPZ_ACTN='list'
-		;;
-	u|update)
-		APPZ_ACTN='update'
-		;;
-	U|upgrade)
-		APPZ_ACTN='upgrade'
-		;;
-	s|search)
-		APPZ_ACTN='search'
-		;;
-	S|show|I|info)
-		APPZ_ACTN='show'
-		;;
-	c|clean)
-		APPZ_ACTN='clean'
-		;;
-	h|help|"")
-		APPZ_ACTN='help'
-		;;
-	has)
-		APPZ_ACTN='has'
-		;;
-	C|count)
-		APPZ_ACTN='count'
-		;;
-esac
-shift
+while [ "$1" ]; do
+	case "$1" in
+		i|install)
+			APPZ_ACTN='install'
+			shift
+			;;
+		r|remove)
+			APPZ_ACTN='remove'
+			shift
+			;;
+		l|list)
+			APPZ_ACTN='list'
+			shift
+			;;
+		u|update)
+			APPZ_ACTN='update'
+			shift
+			;;
+		U|upgrade)
+			APPZ_ACTN='upgrade'
+			shift
+			;;
+		s|search)
+			APPZ_ACTN='search'
+			shift
+			;;
+		S|show|I|info)
+			APPZ_ACTN='show'
+			shift
+			;;
+		c|clean)
+			APPZ_ACTN='clean'
+			shift
+			;;
+		h|help|"")
+			APPZ_ACTN='help'
+			shift
+			;;
+		has)
+			APPZ_ACTN='has'
+			shift
+			;;
+		C|count)
+			APPZ_ACTN='count'
+			shift
+			;;
+		-f|--force) 
+			APPZ_FORCE_ACT=true
+			prnt_log "log : APPZ_FORCE_ACT is set to true"
+			shift
+			;;
+		"-v")
+			echo "mngr : \`${APPZ_MNGR_NAME:-$APPZ_MNGR}\` v${APPZ_MNGR_VERSION:-??}"
+			exit 0
+			;;
+		-*)
+			echo "err : option $1 is not supported"
+			exit 1
+			;;
+		*)
+			break
+			;;
+	esac
+done
 
 # check if action is aviable
 case "${APPZ_ACTN:?}" in
 	"clean"|"has"|"help"|"install"|"list"|"remove"|"search"|"show"|"update"|"upgrade"|"count")
-		has "appz_${APPZ_ACTN}" || echo "err : appz_${APPZ_ACTN}() is not implemented in \`${APPZ_MNGR}\` mngr."
+		has "appz_${APPZ_ACTN}" || { echo "err : appz_${APPZ_ACTN}() is not implemented in \`${APPZ_MNGR}\` mngr."; exit 1;}
 		appz_run() {
 			has "appz_${APPZ_ACTN}" || return 1
 			appz_${APPZ_ACTN} "$@"
@@ -193,6 +215,7 @@ case "${APPZ_ACTN:?}" in
 		;;
 	*)
 		echo "err : action \`${APPZ_ACTN}\` is not supported!!"
+		exit 1
 		;;
 esac
 
