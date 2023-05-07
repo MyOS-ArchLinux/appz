@@ -2,10 +2,6 @@
 APPZ_MNGR_VERSION="0.0.1"
 APPZ_MNGR_NAME="pipx"
 
-appz_clean(){
-	echo "not supported"
-}
-
 appz_has(){
 	while [ "$1" ]; do
 		if pipx list | awk '/package/{ print $2 }' | grep "^${1}$" -q ; then
@@ -32,17 +28,10 @@ appz_remove(){
 	pipx uninstall "$@" --verbose
 }
 
-appz_search(){
-	echo "not supported"
-}
-
 appz_show(){
 	pipx runpip "$@" show "$@"
 }
 
-appz_update(){
-	echo "not supported"
-}
 
 appz_upgrade(){
 	pipx upgrade-all --include-injected  --verbose
