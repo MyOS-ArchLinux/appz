@@ -3,12 +3,13 @@ APPZ_VERSION="0.1 (WIP)"
 APPZ_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/appz"  # where all configs belongs
 APPZ_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/appz"	  # where all caches belongs
 APPZ_DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/appz" # where all addons belongs
-APPZ_TMP_DIR="/tmp/appz/$$"						 		  # where all tmps belongs
+APPZ_TMP_DIR="/tmp/appz/$$"								  # where all tmps belongs
 
 APPZ_SCRIPT_NAME="$(basename "$0")"
 APPZ_isINSTALLED=false
 APPZ_FORCE_ACT=false
 APPZ_LOG=false
+APPZ_VERBOSE=false
 APPZ_MNGR=pacman
 APPZ_ACTN=help
 
@@ -60,6 +61,7 @@ _prompt() {
 }
 ### 
 is_file_uptodate(){
+	[ "${APPZ_FORCE_ACT:?}" == true ] && return 1
 	[ -s "$*" ] || return 1
 	[ "$(stat -c %y "$*" 2>/dev/null | cut -d' ' -f1)" = "$(date '+%Y-%m-%d')" ]
 }
@@ -76,16 +78,16 @@ appz_help(){
 }
 
 appz_fallback_usage(){
-	prnt_opt i "install" "install one or more packages"
-	prnt_opt r "remove " "remove one or more packages"
-	prnt_opt l "list   " "list installed packages"
-	prnt_opt C "count  " "count installed packages"
-	prnt_opt u "update " "update package lists"
-	prnt_opt U "upgrade" "upgrade all packages"
-	prnt_opt s "search " "search for a package"
-	prnt_opt S "show   " "show information about a package"
-	prnt_opt I "info   " "same as show"
-	prnt_opt c "clean  " "clean up leftover files/caches/orphans"
+	has appz_install && prnt_opt i "install" "install one or more packages"
+	has appz_remove  && prnt_opt r "remove " "remove one or more packages"
+	has appz_list    && prnt_opt l "list   " "list installed packages"
+	has appz_count   && prnt_opt C "count  " "count installed packages"
+	has appz_update  && prnt_opt u "update " "update package lists"
+	has appz_upgrade && prnt_opt U "upgrade" "upgrade all packages"
+	has appz_search  && prnt_opt s "search " "search for a package"
+	has appz_show    && prnt_opt S "show   " "show information about a package"
+	has appz_show    && prnt_opt I "info   " "same as show"
+	has appz_clean   && prnt_opt c "clean  " "clean up leftover files/caches/orphans"
 	prnt_opt h "help   " "show this message"
 }
 
@@ -95,9 +97,9 @@ if ! has "${APPZ_SCRIPT_NAME:-appz}" ;then
 	# if no ; then notify and change dirs
 	APPZ_isINSTALLED=false
 	prnt_log "wrn : ${APPZ_SCRIPT_NAME:-appz} in not intalled in your path file"
-	APPZ_CONFIG_DIR="$PWD/config" # where all configs belongs
-	APPZ_CACHE_DIR="$PWD/cache"   # where all caches belongs
-	APPZ_DATA_DIR="$PWD/data"	 # where all addons belongs
+	APPZ_CONFIG_DIR="$PWD/config"	# where all configs belongs
+	APPZ_CACHE_DIR="$PWD/cache"		# where all caches belongs
+	APPZ_DATA_DIR="$PWD/data"		# where all addons belongs
 	APPZ_TMP_DIR="$PWD/tmp/$$"	# where all tmps belongs
 else
 	# if yes ; then check for updates
@@ -124,15 +126,15 @@ case "$1" in
 		;;
 esac
 
-if [ -f "${APPZ_DATA_DIR}/addons/${1:-$APPZ_MNGR}" ] ; then
+if [ -f "${APPZ_CONFIG_DIR}/addons/${1:-$APPZ_MNGR}" ] ; then
 	APPZ_MNGR=${1:-$APPZ_MNGR}
 	shift
 fi
 
 # load menu
-if [ -f "${APPZ_DATA_DIR}/addons/${APPZ_MNGR}" ] ; then
-	prnt_log "log : loading mngr from \`${APPZ_DATA_DIR}/addons/${APPZ_MNGR}\`"
-	. "${APPZ_DATA_DIR}/addons/${APPZ_MNGR}"
+if [ -f "${APPZ_CONFIG_DIR}/addons/${APPZ_MNGR}" ] ; then
+	prnt_log "log : loading mngr from \`${APPZ_CONFIG_DIR}/addons/${APPZ_MNGR}\`"
+	. "${APPZ_CONFIG_DIR}/addons/${APPZ_MNGR}"
 	has appz_usage || prnt_log "log : appz_usage() is not implemented in \`${APPZ_MNGR}\` menu, fallback to to local"
 else
 	echo "err : mngr \`${APPZ_MNGR}\` not found"
