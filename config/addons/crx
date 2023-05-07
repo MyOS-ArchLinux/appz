@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+APPZ_MNGR_VERSION="0.0.1 (wip)"
+APPZ_MNGR_NAME="crx"
+APPZ_DATA_DIR_CRX="${APPZ_DATA_DIR:?}/crx"
+APPZ_CACHE_DIR_CRX="${APPZ_CACHE_DIR:?}/crx"
+
+if has chromium ; then
+	CHROME_VER=$(chromium --version | awk '{print $2}')
+elif has brave; then
+	CHROME_VER=$(brave --version | awk '{print $3}')
+else
+	CHROME_VER='112.0.5615.165'
+fi
+
+CHROME_UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_VER:?} Safari/537.36}"
+CHROME_STR_URL="https://chrome.google.com/webstore/detail/"
+CHROME_REF_URL="https://chrome.google.com/webstore/"
+CHROME_REF="${CHROME_UA:+$CHROME_REF_URL}"
+
+mkdir -p "${APPZ_DATA_DIR_CRX:?}"
+mkdir -p "${APPZ_CACHE_DIR_CRX:?}"
+
+crx_addon_id_valide(){
+	case "${1}" in ('' | *[!a-z]* | *" "*) echo "[ERROR] invalid extention ID \"${1}\"" >&2 ; return 1 ; esac
+}
+
+crx_download_addons_metadata(){
+	if (( $# == 0 )) ; then
+		local ARGS=$(< /dev/stdin)
+	else
+		local ARGS=$@
+	fi
+	for APP_ID in ${ARGS} ; do
+		echo "url = https://clients2.google.com/service/update2/crx?response=updatecheck&acceptformat=crx2,crx3&prodversion=${CHROME_VER}&x=id%3D${APP_ID}%26uc"
+		printf "output = %s\n" "${APPZ_CACHE_DIR_CRX:?}/${APP_ID}.xml"
+	done | curl -Z --parallel-max 10 -A "${CHROME_UA}" -H "accept-encoding:gzip" --compressed --referer "${CHROME_REF}" -K - &>/dev/null
+}
+
+crx_check_if_metadata_valide(){
+	local err_msg=$(xmllint --xpath "string(//@status)" "${APPZ_CACHE_DIR_CRX:?}/${@}.xml")
+	case "${err_msg}" in
+		"ok")
+			return 0 ;;
+		*)
+			echo "err : \`${err_msg}\` " ; return 1 ;;
+	esac
+}
+
+crx_get_download_url_from_metadata(){
+	xmllint --xpath "string(//@codebase)" "${APPZ_CACHE_DIR_CRX:?}/${@}.xml" 2>/dev/null
+}
+
+crx_get_download_hash_from_metadata(){
+	xmllint --xpath "string(//@hash_sha256)" "${APPZ_CACHE_DIR_CRX:?}/${@}.xml" 2>/dev/null
+}
+
+crx_download_addon_package(){
+	local ADDON_DOWNLOAD_URL=$(crx_get_download_url_from_metadata "${@:?}")
+	local ADDON_DOWNLOAD_FILE="${APPZ_CACHE_DIR_CRX:?}/${@}.crx"
+	curl -fL --progress-bar -A "${CHROME_UA}" --referer "${CHROME_REF}" -o "${ADDON_DOWNLOAD_FILE:?}" -- "${ADDON_DOWNLOAD_URL}" && exitCode=0 || exitCode=$?
+	if [ ! "${exitCode:?}" -eq 0 ]; then
+		rm -fr "${ADDON_DOWNLOAD_FILE:?}"
+		return 1
+	fi
+}
+
+crx_check_addon_package_hash(){
+	local ADDON_HASH_STRING=$(crx_get_download_hash_from_metadata "${@:?}")
+	echo "${ADDON_HASH_STRING:?} ${APPZ_CACHE_DIR_CRX:?}/${@:?}.crx" | sha256sum --check --status || return 1
+}
+
+crx_check_addon_package_valide(){
+	CRMAGIC=$(dd if="${APPZ_CACHE_DIR_CRX:?}/${@:?}.crx" bs=4 count=1 2>/dev/null)
+	[ "$CRMAGIC" = Cr24 ] || { echo "err : $@ is not a valide crx file." ; return 1;}
+	MANIFEST_VERSION=$(od -An -j4 -N4 -tu "${APPZ_CACHE_DIR_CRX:?}/${@:?}.crx" | tr -d ' \t')
+	case $MANIFEST_VERSION in
+		2)
+			KEY_LEN=$(od -An -j8 -N4 -tu "${APPZ_CACHE_DIR_CRX:?}/${@:?}.crx" | tr -d ' \t')
+			SIG_LEN=$(od -An -j12 -N4 -tu "${APPZ_CACHE_DIR_CRX:?}/${@:?}.crx" | tr -d ' \t')
+			OFFSET=$((16 + KEY_LEN + SIG_LEN))
+			;;
+		3)
+			HEADER_LEN=$(od -An -j8 -N4 -tu "${APPZ_CACHE_DIR_CRX:?}/${@:?}.crx" | tr -d ' \t')
+			OFFSET=$((12 + HEADER_LEN))
+		;;
+		*)
+			return 1 # "don't know how to deal with extensions version $MANIFEST_VERSION"
+			;;
+	esac
+	ZIPMAGIC=$(od -An -j$OFFSET -N4 -tx "${APPZ_CACHE_DIR_CRX:?}/${@:?}.crx" | tr -d ' \t')
+	[ $ZIPMAGIC = 04034b50 ] || { echo "err : $@ is not a valide zip file." ; return 1;}
+	dd if="${APPZ_CACHE_DIR_CRX:?}/${@:?}.crx" of="${APPZ_CACHE_DIR_CRX:?}/${@:?}.zip" ibs=1 skip=$OFFSET 2>/dev/null
+}
+
+crx_unpack_addon_package(){
+	local ADDON_DIR="${APPZ_DATA_DIR_CRX}/venvs/${@:?}"
+	rm -fr "${ADDON_DIR:?}"
+	mkdir -p "${ADDON_DIR:?}"
+	unzip -qqo "${APPZ_CACHE_DIR_CRX:?}/${@:?}.zip" -d "${ADDON_DIR:?}" > /dev/null 2>&1
+}
+
+
+get_local_ext_name(){
+	local ADDON_DIR_TMP="${APPZ_DATA_DIR_CRX}/venvs/${@:?}"
+	local ADDON_DATA_TMP=$(cat "${ADDON_DIR_TMP:?}/manifest.json")
+	local ADDON_NAME_TMP=$(echo "${ADDON_DATA_TMP:?}" | jq -r ".name")
+	case "${ADDON_NAME_TMP}" in
+		"__MSG_"*)
+			ADDON_NAME_TMP="${ADDON_NAME_TMP##__MSG_}"
+			ADDON_NAME_TMP="${ADDON_NAME_TMP%%__}"
+			local ADDON_LOCALE=$(echo "${ADDON_DATA_TMP:?}" | jq -r ".default_locale")
+			cat "${APPZ_DATA_DIR_CRX}/venvs/${@:?}/_locales/${ADDON_LOCALE}/messages.json" | jq -r ".${ADDON_NAME_TMP}.message" 2>/dev/null || \
+			cat "${APPZ_DATA_DIR_CRX}/venvs/${@:?}/_locales/${ADDON_LOCALE}/messages.json" | jsonlint -Sf | jq -r ".${ADDON_NAME_TMP}.message"
+
+			;;
+		*)
+			echo "${ADDON_NAME_TMP}"
+			;;
+	esac
+}
+
+crx_install_addon_package(){
+	mkdir -p "${APPZ_DATA_DIR_CRX:?}/addons"
+	local ADDON_DIR="${APPZ_DATA_DIR_CRX}/venvs/${@:?}"
+	local ADDON_DATA=$(cat "${ADDON_DIR:?}/manifest.json")
+	local ADDON_NAME=$(get_local_ext_name "${@}" | sed 's/\//∕/')
+	local ADDON_ICON=$(echo "${ADDON_DATA:?}" | jq -r ".icons|.[]" | tail -1)
+	local ADDON_ICON_EX="${ADDON_ICON##*.}"
+	[ -f "${ADDON_DIR:?}/${ADDON_ICON}" ] && cp -f "${ADDON_DIR:?}/${ADDON_ICON}" "${ADDON_DIR:?}/.folder.${ADDON_ICON_EX}"
+	rm -fr "${APPZ_DATA_DIR_CRX:?}/addons/${ADDON_NAME:?}"
+	ln -s "${APPZ_DATA_DIR_CRX}/venvs/${@:?}" "${APPZ_DATA_DIR_CRX:?}/addons/${ADDON_NAME:?}"
+}
+
+appz_install() {
+	local ADDON_ID="$1"
+	crx_addon_id_valide "${ADDON_ID:?}" || return 1
+	if ! is_file_uptodate "${APPZ_CACHE_DIR_CRX:?}/${ADDON_ID:?}.xml" ; then
+		crx_download_addons_metadata "${ADDON_ID:?}" || return 1
+	fi
+	crx_check_if_metadata_valide "${ADDON_ID:?}" || return 1
+	if ! is_file_uptodate "${APPZ_CACHE_DIR_CRX:?}/${ADDON_ID:?}.crx" ; then
+		crx_download_addon_package "${ADDON_ID:?}" || return 1
+	fi
+	crx_check_addon_package_hash "${ADDON_ID:?}" || return 1
+	if ! is_file_uptodate "${APPZ_CACHE_DIR_CRX:?}/${ADDON_ID:?}.zip" ; then
+		crx_check_addon_package_valide "${ADDON_ID:?}" || return 1
+	fi
+	crx_unpack_addon_package "${ADDON_ID:?}" || return 1
+	crx_install_addon_package ${ADDON_ID:?}
+}
+
+appz_update(){
+	for ADDON_ID in "${APPZ_DATA_DIR_CRX}/venvs/"*/ ; do
+		ADDON_ID=${ADDON_ID%"${ADDON_ID##*[!/]}"}
+		ADDON_ID=${ADDON_ID##*/}
+		if ! is_file_uptodate "${APPZ_CACHE_DIR_CRX:?}/${ADDON_ID:?}.xml" ; then
+		    printf '%s ' ${ADDON_ID}
+		fi
+	done | crx_download_addons_metadata
+}
+
+crx_get_available_version(){
+	xmllint --xpath "string(//@version)" "${APPZ_CACHE_DIR_CRX:?}/${@}.xml" 2>/dev/null
+}
+
+crx_get_installed_version(){
+	 jq -r ".version" "${APPZ_DATA_DIR_CRX}/venvs/${@:?}/manifest.json" 2>/dev/null
+}
+
+appz_upgrade(){
+	for TMP_ID in "${APPZ_DATA_DIR_CRX}/venvs/"*/ ; do
+		TMP_ID=${TMP_ID%"${TMP_ID##*[!/]}"}
+		TMP_ID=${TMP_ID##*/}
+		local TMP_NAME=$(get_local_ext_name ${TMP_ID})
+		local installed_version=$(crx_get_installed_version "$TMP_ID")
+		local available_version=$(crx_get_available_version "$TMP_ID")
+		if [ ! "${installed_version:?}" = "${available_version:?}" ]; then	# if installed Version != available Version
+			printf -- '- %s : %s \n' "${TMP_ID:?} - ${TMP_NAME:?}" "${available_version:?}"
+			appz_install "${TMP_ID}"
+		fi
+	done
+}
+
+appz_clean(){
+	printf '%s\n' "crx cache directory: ${CRX_CACH_DIR} "
+	_prompt "==> Do you want to remove all crx metadata cache?" && rm -frv "${APPZ_CACHE_DIR_CRX:?}"/*
+}
