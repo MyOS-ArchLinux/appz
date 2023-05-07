@@ -5,4 +5,4 @@ elif has "paru" ;then
 	APPZ_MNGR="paru"
 fi
 
-. "${APPZ_DATA_DIR}/addons/${APPZ_MNGR}"
+. "${APPZ_CONFIG_DIR}/addons/${APPZ_MNGR}"
