@@ -72,7 +72,7 @@ appz_has(){
 }
 
 appz_clean(){
-	yay -c
+	yay -Yc
 	yay -Sca
 }
 
