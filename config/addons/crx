@@ -212,7 +212,7 @@ crx_get_search_data(){
 appz_search(){
 	[ -z "${1}" ] && { echo "err : arg is not provided" ; return 1 ;}
 	local search_data=$(crx_get_search_data "${@}" | jq -r '.[1]|.[1]|.[]| "\(.[0]) \(.[1]) by \(.[2])"')
-	[ -z "${search_data}" ] && { echo "err : failed to get search data" ; return 1; }
+	[ -z "${search_data}" ] && { echo "err : failed to get search data" ; return 1;}
 	local selected_addon_id=$(echo "${search_data}" | fzf -i -e -m --cycle --no-sort --layout=reverse --preview-window=right,90 --preview "appz ${APPZ_MNGR:?} show {+1}" --with-nth='2..' --delimiter=" "  -q "${*:-}" | awk '{print $1}')
 	[ -z "$selected_addon_id" ] && return 0
 	_prompt "do you wanna install $selected_addon_id ?" && appz_install "$selected_addon_id"
@@ -226,7 +226,8 @@ crx_get_addon_info(){
 }
 
 appz_show(){
-	[ -z "${1}" ] && { echo "err : arg is not provided" ; return 1 ;}
+	[ -z "$1" ] && { echo "err : arg is not provided" ; return 1 ;}
+	crx_addon_id_valid "$1" || return 1;
 	local search_data=$(crx_get_addon_info "$1")
 	local addon_id=$( echo "${search_data}" | jq -r '.[1]|.[1]|.[0]|.[0]' )
 	local addon_name=$( echo "${search_data}" | jq -r '.[1]|.[1]|.[0]|.[1]' )
