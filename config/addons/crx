@@ -4,6 +4,8 @@ APPZ_MNGR_NAME="crx"
 APPZ_DATA_DIR_CRX="${APPZ_DATA_DIR:?}/crx"
 APPZ_CACHE_DIR_CRX="${APPZ_CACHE_DIR:?}/crx"
 
+need xmllint curl sha256sum dd od zip jsonlint cat awk fzf || exit 1
+
 if has chromium ; then
 	CHROME_VER=$(chromium --version | awk '{print $2}')
 elif has brave; then
@@ -21,7 +23,7 @@ mkdir -p "${APPZ_DATA_DIR_CRX:?}"
 mkdir -p "${APPZ_CACHE_DIR_CRX:?}"
 
 crx_addon_id_valid(){
-	case "${1}" in ('' | *[!a-z]* | *" "*) echo "err : invalid extention ID \"${1}\"" >&2 ; return 1 ; esac
+	case "${1}" in ('' | *[!a-z]* | *" "*) prnt_err "invalid extention ID \"${1}\"" >&2 ; return 1 ; esac
 }
 
 crx_download_addons_metadata(){
@@ -42,7 +44,7 @@ crx_check_if_metadata_valid(){
 		"ok")
 			return 0 ;;
 		*)
-			echo "err : \`${err_msg}\` " ; return 1 ;;
+			prnt_err "\`${err_msg}\`" ; return 1 ;;
 	esac
 }
 
@@ -71,7 +73,7 @@ crx_check_addon_package_hash(){
 
 crx_check_addon_package_valid(){
 	CRMAGIC=$(dd if="${APPZ_CACHE_DIR_CRX:?}/${@:?}.crx" bs=4 count=1 2>/dev/null)
-	[ "$CRMAGIC" = Cr24 ] || { echo "err : $@ is not a valid crx file." ; return 1;}
+	[ "$CRMAGIC" = Cr24 ] || { prnt_err "$@ is not a valid crx file." ; return 1;}
 	MANIFEST_VERSION=$(od -An -j4 -N4 -tu "${APPZ_CACHE_DIR_CRX:?}/${@:?}.crx" | tr -d ' \t')
 	case $MANIFEST_VERSION in
 		2)
@@ -88,7 +90,7 @@ crx_check_addon_package_valid(){
 			;;
 	esac
 	ZIPMAGIC=$(od -An -j$OFFSET -N4 -tx "${APPZ_CACHE_DIR_CRX:?}/${@:?}.crx" | tr -d ' \t')
-	[ $ZIPMAGIC = 04034b50 ] || { echo "err : $@ is not a valid zip file." ; return 1;}
+	[ $ZIPMAGIC = 04034b50 ] || { prnt_err "$@ is not a valid zip file." ; return 1;}
 	dd if="${APPZ_CACHE_DIR_CRX:?}/${@:?}.crx" of="${APPZ_CACHE_DIR_CRX:?}/${@:?}.zip" ibs=1 skip=$OFFSET 2>/dev/null
 }
 
@@ -98,7 +100,6 @@ crx_unpack_addon_package(){
 	mkdir -p "${ADDON_DIR:?}"
 	unzip -qqo "${APPZ_CACHE_DIR_CRX:?}/${@:?}.zip" -d "${ADDON_DIR:?}" > /dev/null 2>&1
 }
-
 
 get_local_ext_name(){
 	local ADDON_DIR_TMP="${APPZ_DATA_DIR_CRX}/venvs/${@:?}"
@@ -111,7 +112,6 @@ get_local_ext_name(){
 			local ADDON_LOCALE=$(echo "${ADDON_DATA_TMP:?}" | jq -r ".default_locale")
 			cat "${APPZ_DATA_DIR_CRX}/venvs/${@:?}/_locales/${ADDON_LOCALE}/messages.json" | jq -r ".${ADDON_NAME_TMP}.message" 2>/dev/null || \
 			cat "${APPZ_DATA_DIR_CRX}/venvs/${@:?}/_locales/${ADDON_LOCALE}/messages.json" | jsonlint -Sf | jq -r ".${ADDON_NAME_TMP}.message"
-
 			;;
 		*)
 			echo "${ADDON_NAME_TMP}"
@@ -140,9 +140,12 @@ appz_install() {
 	crx_check_if_metadata_valid "${ADDON_ID:?}" || return 1
 	local installed_version=$(crx_get_installed_version "${ADDON_ID:?}" || echo 0)
 	local available_version=$(crx_get_available_version "${ADDON_ID:?}")
+
+	[ -z "${available_version}" ] && { prnt_err "can get available_version for ${ADDON_ID}" ; return 1; }
+
 	if [ "${installed_version:?}" = "${available_version:?}" ]; then	# if installed Version != available Version
 		local TMP_NAME=$(get_local_ext_name ${ADDON_ID})
-		echo ":: addon \`${TMP_NAME:?}\` is up to date" ; return
+		echo ":: addon \`${TMP_NAME:?}\` is up to date" ; return 0
 	fi
 	if ! is_file_uptodate "${APPZ_CACHE_DIR_CRX:?}/${ADDON_ID:?}.crx" ; then
 		crx_download_addon_package "${ADDON_ID:?}" || return 1
@@ -155,20 +158,25 @@ appz_install() {
 	crx_install_addon_package ${ADDON_ID:?}
 }
 
-appz_update(){
-	for ADDON_ID in "${APPZ_DATA_DIR_CRX}/venvs/"*/ ; do
-		ADDON_ID=${ADDON_ID%"${ADDON_ID##*[!/]}"}
-		ADDON_ID=${ADDON_ID##*/}
-		if ! is_file_uptodate "${APPZ_CACHE_DIR_CRX:?}/${ADDON_ID:?}.xml" ; then
-			printf '%s ' ${ADDON_ID}
+crx_update_db(){
+	for TMP_ID in "${APPZ_DATA_DIR_CRX}/venvs/"*/ ; do
+		TMP_ID=${TMP_ID%"${TMP_ID##*[!/]}"}
+		TMP_ID=${TMP_ID##*/}
+		if ! is_file_uptodate "${APPZ_CACHE_DIR_CRX:?}/${TMP_ID:?}.xml" ; then
+			printf '%s ' ${TMP_ID}
 		fi
 	done | crx_download_addons_metadata
+}
+
+appz_update(){
+	crx_update_db
 	for TMP_ID in "${APPZ_DATA_DIR_CRX}/venvs/"*/ ; do
 		TMP_ID=${TMP_ID%"${TMP_ID##*[!/]}"}
 		TMP_ID=${TMP_ID##*/}
 		local TMP_NAME=$(get_local_ext_name ${TMP_ID})
 		local installed_version=$(crx_get_installed_version "$TMP_ID")
 		local available_version=$(crx_get_available_version "$TMP_ID")
+		[ -z "${available_version}" ] && { prnt_err "can get available_version for ${TMP_NAME} - (${TMP_ID})" ; continue; }
 		if [ ! "${installed_version:?}" = "${available_version:?}" ]; then	# if installed Version != available Version
 			printf -- '- %s : %s >> %s \n' "${TMP_NAME:?}" "${installed_version:?}" "${available_version:?}"
 		fi
@@ -190,6 +198,7 @@ appz_upgrade(){
 		local TMP_NAME=$(get_local_ext_name ${TMP_ID})
 		local installed_version=$(crx_get_installed_version "$TMP_ID")
 		local available_version=$(crx_get_available_version "$TMP_ID")
+		[ -z "${available_version}" ] && { prnt_err "can get available_version for ${TMP_NAME} - (${TMP_ID})" ; continue; }
 		if [ ! "${installed_version:?}" = "${available_version:?}" ]; then	# if installed Version != available Version
 			printf -- '- %s : %s \n' "${TMP_ID:?} - ${TMP_NAME:?}" "${available_version:?}"
 			appz_install "${TMP_ID}"
@@ -210,10 +219,10 @@ crx_get_search_data(){
 }
 
 appz_search(){
-	[ -z "${1}" ] && { echo "err : arg is not provided" ; return 1 ;}
+	[ -z "${1}" ] && { prnt_err "arg is not provided" ; return 1 ;}
 	local search_data=$(crx_get_search_data "${@}" | jq -r '.[1]|.[1]|.[]| "\(.[0]) \(.[1]) by \(.[2])"')
-	[ -z "${search_data}" ] && { echo "err : failed to get search data" ; return 1;}
-	local selected_addon_id=$(echo "${search_data}" | fzf -i -e -m --cycle --no-sort --layout=reverse --preview-window=right,90 --preview "appz ${APPZ_MNGR:?} show {+1}" --with-nth='2..' --delimiter=" "  -q "${*:-}" | awk '{print $1}')
+	[ -z "${search_data}" ] && { prnt_err "failed to get search data" ; return 1;}
+	local selected_addon_id=$(echo "${search_data}" | fzf -i -e -m --cycle --no-sort --layout=reverse --preview-window=right,90 --preview "appz ${APPZ_MNGR:?} show {+1}" --with-nth='2..' --delimiter=" " -q "${*:-}" | awk '{print $1}')
 	[ -z "$selected_addon_id" ] && return 0
 	_prompt "do you wanna install $selected_addon_id ?" && appz_install "$selected_addon_id"
 }
@@ -226,22 +235,22 @@ crx_get_addon_info(){
 }
 
 appz_show(){
-	[ -z "$1" ] && { echo "err : arg is not provided" ; return 1 ;}
+	[ -z "$1" ] && { prnt_err "arg is not provided" ; return 1 ;}
 	crx_addon_id_valid "$1" || return 1;
 	local search_data=$(crx_get_addon_info "$1")
-	local addon_id=$( echo "${search_data}" | jq -r '.[1]|.[1]|.[0]|.[0]' )
-	local addon_name=$( echo "${search_data}" | jq -r '.[1]|.[1]|.[0]|.[1]' )
-	local addon_version=$( echo "${search_data}" | jq -r '.[1]|.[1]|.[6]' )
-	local addon_author_name=$( echo "${search_data}" | jq -r '.[1]|.[1]|.[0]|.[2]' )
-	local addon_author_mail=$( echo "${search_data}" | jq -r '.[1]|.[1]|.[35]|.[0]' )
-	local addon_description=$( echo "${search_data}" | jq -r '.[1]|.[1]|.[0]|.[6]' )
-	local addon_category=$( echo "${search_data}" | jq -r '.[1]|.[1]|.[0]|.[10]' )
-	local addon_description_big=$( echo "${search_data}" | jq -r '.[1]|.[1]|.[1]' )
-	local addon_url=$( echo "${search_data}" | jq -r '.[1]|.[1]|.[5]' )
-	local addon_date=$( echo "${search_data}" | jq -r '.[1]|.[1]|.[7]' )
-	local addon_size=$( echo "${search_data}" | jq -r '.[1]|.[1]|.[25]' )
-	local addon_slug=$( echo "${search_data}" | jq -r '.[1]|.[1]|.[0]|.[61]' )
-	local addon_req=$( echo "${search_data}" | jq -r '.[1]|.[1]|.[0]|.[58]' )
+	local addon_id=$(echo "${search_data}" | jq -r '.[1]|.[1]|.[0]|.[0]')
+	local addon_name=$(echo "${search_data}" | jq -r '.[1]|.[1]|.[0]|.[1]')
+	local addon_version=$(echo "${search_data}" | jq -r '.[1]|.[1]|.[6]')
+	local addon_author_name=$(echo "${search_data}" | jq -r '.[1]|.[1]|.[0]|.[2]')
+	local addon_author_mail=$(echo "${search_data}" | jq -r '.[1]|.[1]|.[35]|.[0]')
+	local addon_description=$(echo "${search_data}" | jq -r '.[1]|.[1]|.[0]|.[6]')
+	local addon_category=$(echo "${search_data}" | jq -r '.[1]|.[1]|.[0]|.[10]')
+	local addon_description_big=$(echo "${search_data}" | jq -r '.[1]|.[1]|.[1]')
+	local addon_url=$(echo "${search_data}" | jq -r '.[1]|.[1]|.[5]')
+	local addon_date=$(echo "${search_data}" | jq -r '.[1]|.[1]|.[7]')
+	local addon_size=$(echo "${search_data}" | jq -r '.[1]|.[1]|.[25]')
+	local addon_slug=$(echo "${search_data}" | jq -r '.[1]|.[1]|.[0]|.[61]')
+	local addon_req=$(echo "${search_data}" | jq -r '.[1]|.[1]|.[0]|.[58]')
 	echo "Repository      : chrome-web-store"
 	echo "Name            : ${addon_name}"
 	echo "Version         : ${addon_version}"
@@ -252,8 +261,12 @@ appz_show(){
 	echo "Store URL       : ${CHROME_STR_URL}${addon_id}"
 	echo "Provides        : ${addon_slug}"
 	echo "Download Size   : ${addon_size}"
-	echo "Author        : ${addon_author_name} <${addon_author_mail}>"
+	echo "Author          : ${addon_author_name} <${addon_author_mail}>"
 	echo "Build Date      : ${addon_date}"
 	echo "Validated By    : SHA-256 Sum"
 #	echo "Validated By    : MD5 Sum  SHA-256 Sum  Signature"
+}
+
+appz_count(){
+	ls "${APPZ_DATA_DIR_CRX}/venvs/" | tot
 }
