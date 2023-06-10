@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-APPZ_MNGR_VERSION="0.0.1 (wip)"
+APPZ_MNGR_VERSION="0.0.2 (wip)"
 APPZ_MNGR_NAME="crx"
 APPZ_DATA_DIR_CRX="${APPZ_DATA_DIR:?}/crx"
 APPZ_CACHE_DIR_CRX="${APPZ_CACHE_DIR:?}/crx"
@@ -133,11 +133,11 @@ crx_install_addon_package(){
 
 appz_install() {
 	local ADDON_ID="$1"
-	crx_addon_id_valid "${ADDON_ID:?}" || return 1
+	crx_addon_id_valid "${ADDON_ID:?}" || { prnt_err "crx_addon_id_valid() failed" ; return 1 ; }
 	if ! is_file_uptodate "${APPZ_CACHE_DIR_CRX:?}/${ADDON_ID:?}.xml" ; then
-		crx_download_addons_metadata "${ADDON_ID:?}" || return 1
+		crx_download_addons_metadata "${ADDON_ID:?}" || { prnt_err "crx_download_addons_metadata() failed" ; return 1 ; }
 	fi
-	crx_check_if_metadata_valid "${ADDON_ID:?}" || return 1
+	crx_check_if_metadata_valid "${ADDON_ID:?}" || { prnt_err "crx_check_if_metadata_valid() failed" ; return 1 ; }
 	local installed_version=$(crx_get_installed_version "${ADDON_ID:?}" || echo 0)
 	local available_version=$(crx_get_available_version "${ADDON_ID:?}")
 
@@ -148,14 +148,14 @@ appz_install() {
 		echo ":: addon \`${TMP_NAME:?}\` is up to date" ; return 0
 	fi
 	if ! is_file_uptodate "${APPZ_CACHE_DIR_CRX:?}/${ADDON_ID:?}.crx" ; then
-		crx_download_addon_package "${ADDON_ID:?}" || return 1
+		crx_download_addon_package "${ADDON_ID:?}" || { prnt_err "crx_download_addon_package() failed" ; return 1 ; }
 	fi
-	crx_check_addon_package_hash "${ADDON_ID:?}" || return 1
+	crx_check_addon_package_hash "${ADDON_ID:?}" || { prnt_err "crx_check_addon_package_hash() failed" ; return 1 ; }
 	if ! is_file_uptodate "${APPZ_CACHE_DIR_CRX:?}/${ADDON_ID:?}.zip" ; then
-		crx_check_addon_package_valid "${ADDON_ID:?}" || return 1
+		crx_check_addon_package_valid "${ADDON_ID:?}" || { prnt_err "crx_check_addon_package_valid() failed" ; return 1 ; }
 	fi
-	crx_unpack_addon_package "${ADDON_ID:?}" || return 1
-	crx_install_addon_package ${ADDON_ID:?}
+	crx_unpack_addon_package "${ADDON_ID:?}" || { prnt_err "crx_unpack_addon_package() failed" ; return 1 ; }
+	crx_install_addon_package ${ADDON_ID:?} || { prnt_err "crx_install_addon_package() failed" ; return 1 ; }
 }
 
 crx_update_db(){
