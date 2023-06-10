@@ -12,10 +12,10 @@ appz_list(){
 }
 
 appz_search(){
-    local selected_app=$(pacman -Ssq | fzf -i -e -m --preview 'pacman -Si {}' --layout=reverse -q "${*:-}" )
-    [ -z "$selected_app" ] && return 0
-    pacman -Si "$selected_app"
-    _prompt "do you wanna install $selected_app ?" && sudo pacman -S "$selected_app"
+	local selected_app=$(pacman -Ssq | fzf -i -e -m --preview 'pacman -Si {}' --layout=reverse -q "${*:-}" )
+	[ -z "$selected_app" ] && return 0
+	pacman -Si "$selected_app"
+	_prompt "do you wanna install $selected_app ?" && sudo pacman -S "$selected_app"
 }
 
 appz_install() {
@@ -37,30 +37,35 @@ appz_install() {
 }
 
 appz_update_pacman_mirrorlist(){
-    reflector --verbose --protocol https --latest 10 --sort rate --save "${pacman_mirrorlist:?}"
-    echo "#\n" >> "${pacman_mirrorlist:?}"
-    reflector --country Spain,Germany,France,Sweden,Netherlands --protocol https --latest 40 >> "${pacman_mirrorlist:?}"
-    awk ' !x[$0]++' "${pacman_mirrorlist:?}" > "${pacman_mirrorlist:?}_new"
-    sudo mv -f -v "${pacman_mirrorlist:?}_new" /etc/pacman.d/mirrorlist
+	reflector --verbose --protocol https --latest 10 --sort rate --save "${pacman_mirrorlist:?}" || { prnt_err "error to get update mirrors list" ;return 1 ; }
+	echo "#\n" >> "${pacman_mirrorlist:?}"
+	reflector --country Spain,Germany,France,Sweden,Netherlands --protocol https --latest 40 >> "${pacman_mirrorlist:?}" || { prnt_err "error to get update mirrors list" ;return 1 ; }
+	awk ' !x[$0]++' "${pacman_mirrorlist:?}" > "${pacman_mirrorlist:?}_new"
+	_prompt "do you want to save mirror list" || { echo "skipped update mirrors"; return 0; }
+	sudo mv -f -v "${pacman_mirrorlist:?}_new" /etc/pacman.d/mirrorlist
 }
 
 appz_update(){
 	if ! is_file_uptodate "${pacman_mirrorlist:?}"; then
 		_prompt "do you want to update pacman mirror list" && \
 		appz_update_pacman_mirrorlist || \
-		touch "${pacman_mirrorlist:?}"
+		rm -fr "${pacman_mirrorlist:?}"
+	fi
+	echo ":: checking for new updates"
+	if [ "${APPZ_FORCE_ACT:?}" == true ] ; then
+		sudo pacman -Syy;
+	else
+		sudo pacman -Sy;
 	fi
 
-    sudo pacman -Sy;
-
-    if pacman -Qu | grep -v "\[ignored\]" -q; then
-        notify-send "🎁 apps" "New updates available."
-        printf -- '\033[1;32m%s \033[0m\n' "-> New updates available."
-        pacman -Qu;
-    else
-        notify-send "📦 apps" "Sync complete. No new packages for update."
-        printf -- '\033[1;31m%s \033[0m\n' "-> Sync complete. No new packages for update."
-    fi
+	if pacman -Qu | grep -v "\[ignored\]" -q; then
+		notify-send "🎁 apps" "New updates available."
+		printf -- '\033[1;32m%s \033[0m\n' "-> New updates available."
+		pacman -Qu;
+	else
+		notify-send "📦 apps" "Sync complete. No new packages for update."
+		printf -- '\033[1;31m%s \033[0m\n' "-> Sync complete. No new packages for update."
+	fi
 }
 
 appz_upgrade(){
@@ -83,16 +88,16 @@ appz_remove(){
 }
 
 appz_has(){
-    while [ "$1" ]; do
-        if $(pacman -Qnq $1 >/dev/null 2>&1); then
-            printf ' %s \033[32;1m\t%s \033[0m\n' "- $1" "installed"
-        elif $(pacman -Ssq "^$1" >/dev/null 2>&1); then
-            printf ' %s \033[31;1m\t%s \033[0m\n' "- $1" "not installed"
-        else
-            printf ' %s \033[31;1m\t%s \033[0m\n' "- $1" "not available in pacman"
-        fi
-        shift
-    done
+	while [ "$1" ]; do
+		if $(pacman -Qnq $1 >/dev/null 2>&1); then
+			printf ' %s \033[32;1m\t%s \033[0m\n' "- $1" "installed"
+		elif $(pacman -Ssq "^$1" >/dev/null 2>&1); then
+			printf ' %s \033[31;1m\t%s \033[0m\n' "- $1" "not installed"
+		else
+			printf ' %s \033[31;1m\t%s \033[0m\n' "- $1" "not available in pacman"
+		fi
+		shift
+	done
 }
 
 appz_clean(){

@@ -11,10 +11,26 @@ APPZ_FORCE_ACT=false
 APPZ_LOG=false
 APPZ_VERBOSE=false
 APPZ_MNGR=pacman
-APPZ_ACTN=help
 
 # functions
 ## tools
+### prnt options
+prnt_opt() {
+	>&2 printf "\033[33;1m-> \033[35;1m%s | %s\033[m %s\n" "$1" "$2" "$3"
+}
+
+prnt_log() {
+	[[ "${APPZ_LOG:-false}" == false ]] && return
+	echo "$@"
+}
+
+prnt_err() {
+	printf "\033[38;5;1merr:\033[m %s\n" "$@"
+}
+
+prnt(){
+	echo ":: $@"
+}
 ### check for deps and functions
 has(){
 	case "$(command -v "$1" 2>/dev/null)" in
@@ -27,7 +43,7 @@ tot(){
 	while read -r ; do
 		i=$((i + 1))
 	done
-	echo "${APPZ_MNGR:?} : $i packages"
+	echo "${APPZ_MNGR:?} : $i ${1:-packages}"
 }
 
 ### check for multiple deps
@@ -39,18 +55,10 @@ need(){
 	done
 	[ -n "${dependencies_not_installed}" ] && \
 		{
-			echo "err : missing dependencies, please install: ${dependencies_not_installed%??}."
+			prnt_err "missing dependencies, please install: ${dependencies_not_installed%??}."
 			return 1 ;
 		}
-}
-### prnt options
-prnt_opt() {
-	>&2 printf "\033[33;1m-> \033[35;1m%s | %s\033[m %s\n" "$1" "$2" "$3"
-}
-
-prnt_log() {
-	[[ "${APPZ_LOG:-false}" == false ]] && return
-	echo "$@"
+	return 0
 }
 
 ### _prompt
@@ -67,9 +75,13 @@ is_file_uptodate(){
 }
 
 ## internal
+prnt_mngr_version(){
+	echo "mngr : \`${APPZ_MNGR_NAME:-$APPZ_MNGR}\` v${APPZ_MNGR_VERSION:-??}"
+}
+
 appz_help(){
 	>&2 echo "${APPZ_SCRIPT_NAME} [mngr] [i|r|l|C|u|U|s|S|I|c|h] [pkg]..."
-	echo "mngr : \`${APPZ_MNGR_NAME:-$APPZ_MNGR}\` v${APPZ_MNGR_VERSION}"
+	prnt_mngr_version
 	if has appz_usage ;then
 		appz_usage
 	else
@@ -120,7 +132,7 @@ else
 fi
 
 case "$1" in
-	--version)
+	-V|--version)
 		echo "${APPZ_SCRIPT_NAME} ${APPZ_VERSION} Copyright © 2023-2024 MyOS Project "
 		exit
 		;;
@@ -137,67 +149,71 @@ if [ -f "${APPZ_CONFIG_DIR}/addons/${APPZ_MNGR}" ] ; then
 	. "${APPZ_CONFIG_DIR}/addons/${APPZ_MNGR}"
 	has appz_usage || prnt_log "log : appz_usage() is not implemented in \`${APPZ_MNGR}\` menu, fallback to to local"
 else
-	echo "err : mngr \`${APPZ_MNGR}\` not found"
+	prnt_err "mngr \`${APPZ_MNGR}\` not found"
 	exit 1
 fi
 
 while [ "$1" ]; do
+	if [ -z ${APPZ_ACTN} ] ; then
+		case "$1" in
+			i|install)
+				APPZ_ACTN='install'
+				shift
+				;;
+			r|remove)
+				APPZ_ACTN='remove'
+				shift
+				;;
+			l|list)
+				APPZ_ACTN='list'
+				shift
+				;;
+			u|update)
+				APPZ_ACTN='update'
+				shift
+				;;
+			U|upgrade)
+				APPZ_ACTN='upgrade'
+				shift
+				;;
+			s|search)
+				APPZ_ACTN='search'
+				shift
+				;;
+			S|show|I|info)
+				APPZ_ACTN='show'
+				shift
+				;;
+			c|clean)
+				APPZ_ACTN='clean'
+				shift
+				;;
+			h|help|"")
+				APPZ_ACTN='help'
+				shift
+				;;
+			has)
+				APPZ_ACTN='has'
+				shift
+				;;
+			C|count)
+				APPZ_ACTN='count'
+				shift
+				;;
+		esac
+	fi
 	case "$1" in
-		i|install)
-			APPZ_ACTN='install'
-			shift
-			;;
-		r|remove)
-			APPZ_ACTN='remove'
-			shift
-			;;
-		l|list)
-			APPZ_ACTN='list'
-			shift
-			;;
-		u|update)
-			APPZ_ACTN='update'
-			shift
-			;;
-		U|upgrade)
-			APPZ_ACTN='upgrade'
-			shift
-			;;
-		s|search)
-			APPZ_ACTN='search'
-			shift
-			;;
-		S|show|I|info)
-			APPZ_ACTN='show'
-			shift
-			;;
-		c|clean)
-			APPZ_ACTN='clean'
-			shift
-			;;
-		h|help|"")
-			APPZ_ACTN='help'
-			shift
-			;;
-		has)
-			APPZ_ACTN='has'
-			shift
-			;;
-		C|count)
-			APPZ_ACTN='count'
-			shift
+		-v)
+			prnt_mngr_version
+			exit 0
 			;;
 		-f|--force) 
 			APPZ_FORCE_ACT=true
 			prnt_log "log : APPZ_FORCE_ACT is set to true"
 			shift
 			;;
-		"-v")
-			echo "mngr : \`${APPZ_MNGR_NAME:-$APPZ_MNGR}\` v${APPZ_MNGR_VERSION:-??}"
-			exit 0
-			;;
 		-*)
-			echo "err : option $1 is not supported"
+			prnt_err "option $1 is not supported"
 			exit 1
 			;;
 		*)
@@ -207,16 +223,16 @@ while [ "$1" ]; do
 done
 
 # check if action is aviable
-case "${APPZ_ACTN:?}" in
+case "${APPZ_ACTN:-help}" in
 	"clean"|"has"|"help"|"install"|"list"|"remove"|"search"|"show"|"update"|"upgrade"|"count")
-		has "appz_${APPZ_ACTN}" || { echo "err : appz_${APPZ_ACTN}() is not implemented in \`${APPZ_MNGR}\` mngr."; exit 1;}
+		has "appz_${APPZ_ACTN:-help}" || { prnt_err "appz_${APPZ_ACTN:-help}() is not implemented in \`${APPZ_MNGR}\` mngr."; exit 1;}
 		appz_run() {
-			has "appz_${APPZ_ACTN}" || return 1
-			appz_${APPZ_ACTN} "$@"
+			has "appz_${APPZ_ACTN:-help}" || return 1
+			appz_${APPZ_ACTN:-help} "$@"
 		}
 		;;
 	*)
-		echo "err : action \`${APPZ_ACTN}\` is not supported!!"
+		prnt_err "action \`${APPZ_ACTN}\` is not supported!!"
 		exit 1
 		;;
 esac

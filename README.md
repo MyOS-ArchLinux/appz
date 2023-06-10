@@ -16,14 +16,19 @@ appz [mngr] [i|r|l|C|u|U|s|S|I|c|h] [pkg]...
 -> h | help    show this message
 ```
 
-#### Supported managers : 
+## Supported managers : 
 - pacman
 - yay
 - pipx
 
-#### Installation
+## Installation
 ```bash
 git clone https://github.com/MyOS-ArchLinux/appz
 cd appz
 ...
 ```
+
+## License
+[GPLv3](https://github.com/MyOS-ArchLinux/appz/blob/main/LICENSE)
+
+inspired by [cpm](https://github.com/willeccles/cpm) - MIT License
