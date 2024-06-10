@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+APPZ_MNGR_VERSION="0.0.1"
+APPZ_MNGR_NAME="yay"
+
+appz_list(){
+	echo
+}
+
+appz_search(){
+	echo
+}
+
+appz_install() {
+	echo
+}
+appz_update(){
+	echo
+}
+
+appz_upgrade(){
+	echo
+}
+
+appz_show(){
+	echo
+}
+
+appz_remove(){
+	echo
+}
+
+appz_has(){
+	echo
+}
+
+appz_clean(){
+	echo
+}
+
+appz_count(){
+	echo
+}
